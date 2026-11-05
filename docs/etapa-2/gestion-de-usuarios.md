@@ -198,6 +198,74 @@ Eventos presentes en audit_logs:
 
 ---
 
+## 3bis. PoC-UM-04 — Inyección SQL en los puntos de entrada del módulo (probada, NO explotable)
+
+### 3bis.1 Clasificación
+
+| Marco | Referencia |
+|---|---|
+| OWASP Top 10 | **A03:2021 – Injection** (SQL Injection) |
+| NIST CSF 2.0 | **PR.PS-06 / PR.DS** (consultas parametrizadas, codificación segura) |
+| Vector enunciado | Punto 1: *Puntos de Inyección & Patrones de Ataque (SQL/Command Injection)* |
+
+### 3bis.2 Superficie de ataque evaluada
+
+Se revisaron **todos** los puntos del módulo donde una entrada controlada por el cliente llega a una consulta:
+
+| Entrada | Endpoint | Consulta destino |
+|---|---|---|
+| `class_id`, `section_id` (query string) | GET `/students/view/list` | `Promotion::where('class_id', $class_id)->where('section_id', $section_id)` (`PromotionRepository::getAll`) |
+| `{id}` (segmento de ruta) | GET `/students/view/profile/{id}`, `/teachers/view/profile/{id}` | `User::where('id', $id)` (`UserRepository::findStudent/findTeacher`) |
+| `teacher_id`, `student_id` (cuerpo POST) | POST `/school/*/update` | `User::where('id', ...)` en los updates |
+
+El módulo **no** usa `DB::raw`, `whereRaw`, `selectRaw` ni concatenación de cadenas en SQL; todo el acceso a datos pasa por el *query builder* de Eloquent.
+
+### 3bis.3 Reproducción
+
+```bash
+B=http://localhost:8080; CJ=/tmp/sqli_cookies.txt
+TOKEN(){ python3 -c "import sys,re;m=re.search(r'name=\"_token\"\s+value=\"([^\"]+)\"',sys.stdin.read());print(m.group(1) if m else '')"; }
+T=$(curl -s -c "$CJ" "$B/login" | TOKEN)
+curl -s -b "$CJ" -c "$CJ" -o /dev/null -d "_token=$T" \
+  --data-urlencode "email=admin@ut.com" --data-urlencode "password=password" "$B/login"
+
+# Inyección en class_id del listado de estudiantes
+for p in "1 OR 1=1" "0 UNION SELECT password FROM users-- -" "1); DROP TABLE users;-- -"; do
+  curl -s -b "$CJ" -o /tmp/out.html -w "class_id=[$p] -> HTTP %{http_code}\n" --get \
+    --data-urlencode "class_id=$p" --data-urlencode "section_id=1" "$B/students/view/list"
+done
+grep -ic "SQLSTATE\[\|syntax to use near" /tmp/out.html   # 0 = sin fuga de error de BD
+```
+
+### 3bis.4 Evidencia — la consulta sale parametrizada
+
+Capturando el log de consultas de Laravel con el payload de UNION:
+
+```text
+SQL:      select * from `promotions` where `session_id` = ? and `class_id` = ? and `section_id` = ?
+BINDINGS: [1, "0 UNION SELECT password FROM users-- -", 1]
+```
+
+```text
+findStudent con id = "1 OR 1=1":
+SQL:      select * from `users` where `id` = ? limit 1
+BINDINGS: ["1 OR 1=1"]
+```
+
+El payload completo viaja como **un único valor ligado** (`?`), nunca como parte del texto SQL. Resultados observados:
+
+- Ningún payload devolvió filas extra ni datos de otras tablas; `class_id` inválido produce un listado vacío.
+- La respuesta HTML **no** filtró errores de base de datos (`SQLSTATE`, *syntax error*): 0 ocurrencias.
+- Tras todos los intentos, `SELECT COUNT(*) FROM users` sigue devolviendo las mismas filas: la tabla está intacta.
+
+> Nota: `GET /students/view/profile/1` devuelve HTTP 500, pero **no es inyección**: el seed no tiene usuarios con `role='student'`, `findStudent` retorna `null` y la vista Blade desreferencia `null`. Es un fallo de robustez (manejo de nulos), ajeno a SQLi; se anota como mejora menor.
+
+### 3bis.5 Conclusión honesta
+
+La inyección SQL en el módulo de Gestión de Usuarios **no es explotable** en esta versión: Eloquent parametriza el 100 % de las consultas del módulo y no hay SQL crudo. Se documenta como vector **probado y neutralizado** (riesgo residual bajo). La recomendación de Fase 3 es *preservar* el acceso vía query builder y no introducir `DB::raw`/`whereRaw` con entrada del usuario.
+
+---
+
 ## 4. Resumen de hallazgos del módulo
 
 | ID | Hallazgo | OWASP | NIST | Estado PoC |
@@ -206,6 +274,7 @@ Eventos presentes en audit_logs:
 | UM-02 | XSS almacenado en perfil | A03 | PR.DS | Probado, **mitigado** por Blade (no explotable) |
 | UM-03a | Manipulación de parámetro HTTP (`teacher_id`/`student_id`) | A08 | DE.AE | **Explotado** |
 | UM-03b | Audit Poisoning / evasión (builder omite el observer) | A08/A09 | DE.CM | **Explotado** |
+| UM-04 | Inyección SQL en los puntos de entrada del módulo | A03 | PR.PS-06 | Probado, **mitigado** por Eloquent (no explotable) |
 
 ## 5. Insumos para la Fase 3 (remediación de mi módulo)
 
