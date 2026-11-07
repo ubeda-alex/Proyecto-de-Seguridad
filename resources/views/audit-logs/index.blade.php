@@ -20,7 +20,7 @@
                             </select>
                         </div>
                         <div class="col-sm-6 col-lg-3">
-                            <label for="actor" class="form-label">Usuario</label>
+                            <label for="actor" class="form-label">Usuario o cuenta intentada</label>
                             <input id="actor" name="actor" class="form-control" value="{{ request('actor') }}" maxlength="100">
                         </div>
                         <div class="col-sm-6 col-lg-2">
@@ -59,13 +59,16 @@
                                             @if ($auditLog->actor_email)
                                                 <div class="small text-muted">{{ $auditLog->actor_email }}</div>
                                             @endif
+                                            @if ($auditLog->event === 'auth.login_failed' && !empty($auditLog->new_values['attempted_email']))
+                                                <div class="small text-muted">Cuenta intentada: {{ $auditLog->new_values['attempted_email'] }}</div>
+                                            @endif
                                         </td>
                                         <td class="text-break">{{ $auditLog->auditable_type ? class_basename($auditLog->auditable_type) . ' #' . $auditLog->auditable_id : '—' }}</td>
                                         <td>{{ $auditLog->ip_address ?: '—' }}</td>
                                         <td>
                                             @if ($auditLog->old_values || $auditLog->new_values)
                                                 <details>
-                                                    <summary>Ver cambios</summary>
+                                                    <summary>{{ $auditLog->event === 'auth.login_failed' ? 'Ver detalles' : 'Ver cambios' }}</summary>
                                                     <pre class="small mt-2 mb-0">{{ json_encode(['antes' => $auditLog->old_values, 'después' => $auditLog->new_values], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre>
                                                 </details>
                                             @else
@@ -82,7 +85,7 @@
                         </table>
                     </div>
 
-                    <div class="mt-3">{{ $auditLogs->links() }}</div>
+                    <div class="mt-3">{{ $auditLogs->links('pagination::bootstrap-4') }}</div>
                 </div>
             </div>
             @include('layouts.footer')
