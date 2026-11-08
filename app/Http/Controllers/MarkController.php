@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\Mark;
+use App\Models\Course;
+use App\Models\Promotion;
+use App\Models\AssignedTeacher;
 use Illuminate\Http\Request;
 use App\Traits\SchoolSession;
 use App\Interfaces\UserInterface;
@@ -276,6 +279,44 @@ class MarkController extends Controller
      */
     public function showCourseMark(Request $request)
     {
+        $context = $request->validate([
+            'session_id' => 'required|integer|min:1',
+            'semester_id' => 'required|integer|min:1',
+            'class_id' => 'required|integer|min:1',
+            'section_id' => 'required|integer|min:1',
+            'course_id' => 'required|integer|min:1',
+            'student_id' => 'required|integer|min:1',
+        ]);
+
+        $user = $request->user();
+        if ($user->role === 'student') {
+            abort_unless((int) $context['student_id'] === (int) $user->id, 403);
+        } elseif ($user->role === 'teacher') {
+            abort_unless(AssignedTeacher::where([
+                'teacher_id' => $user->id,
+                'session_id' => $context['session_id'],
+                'semester_id' => $context['semester_id'],
+                'class_id' => $context['class_id'],
+                'section_id' => $context['section_id'],
+                'course_id' => $context['course_id'],
+            ])->exists(), 403);
+        } else {
+            abort_unless($user->role === 'admin', 403);
+        }
+
+        // Authorize the academic context before retrieving any marks.
+        abort_unless(Promotion::where([
+            'student_id' => $context['student_id'],
+            'session_id' => $context['session_id'],
+            'class_id' => $context['class_id'],
+            'section_id' => $context['section_id'],
+        ])->exists(), 403);
+        abort_unless(Course::where('id', $context['course_id'])->where([
+            'session_id' => $context['session_id'],
+            'semester_id' => $context['semester_id'],
+            'class_id' => $context['class_id'],
+        ])->exists(), 403);
+
         $session_id = $request->query('session_id');
         $semester_id = $request->query('semester_id');
         $class_id = $request->query('class_id');
