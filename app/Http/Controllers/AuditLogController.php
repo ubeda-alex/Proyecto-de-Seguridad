@@ -23,7 +23,11 @@ class AuditLogController extends Controller
             ->when($filters['actor'] ?? null, function ($query, $actor) {
                 $query->where(function ($query) use ($actor) {
                     $query->where('actor_name', 'like', '%' . $actor . '%')
-                        ->orWhere('actor_email', 'like', '%' . $actor . '%');
+                        ->orWhere('actor_email', 'like', '%' . $actor . '%')
+                        ->orWhere(function ($query) use ($actor) {
+                            $query->where('event', 'auth.login_failed')
+                                ->where('new_values->attempted_email', 'like', '%' . $actor . '%');
+                        });
                 });
             })
             ->when($filters['from'] ?? null, function ($query, $from) {
