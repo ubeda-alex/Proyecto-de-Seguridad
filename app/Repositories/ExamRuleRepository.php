@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use App\Interfaces\ExamRuleInterface;
 use App\Models\ExamRule;
+use Illuminate\Support\Facades\DB;
 
 class ExamRuleRepository implements ExamRuleInterface {
     public function create($request) {
@@ -16,11 +17,16 @@ class ExamRuleRepository implements ExamRuleInterface {
 
     public function update($request) {
         try {
-            ExamRule::where('id', $request->exam_rule_id)->update([
-                'total_marks'   => $request->total_marks,
-                'pass_marks'    => $request->pass_marks,
-                'marks_distribution_note'   => $request->marks_distribution_note
-            ]);
+            DB::transaction(function () use ($request) {
+                $updated = ExamRule::where('id', $request->exam_rule_id)->lockForUpdate()->firstOrFail()->update([
+                    'total_marks'   => $request->total_marks,
+                    'pass_marks'    => $request->pass_marks,
+                    'marks_distribution_note'   => $request->marks_distribution_note
+                ]);
+                if (!$updated) {
+                    throw new \RuntimeException('Exam rule update was cancelled.');
+                }
+            });
         } catch (\Exception $e) {
             throw new \Exception('Failed to update exam rule. '.$e->getMessage());
         }

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Hash;
 use App\Repositories\PromotionRepository;
 use App\Repositories\StudentParentInfoRepository;
 use App\Repositories\StudentAcademicInfoRepository;
+use App\Services\AuditLogger;
 
 class UserRepository implements UserInterface {
     use Base64ToFile;
@@ -121,7 +122,7 @@ class UserRepository implements UserInterface {
     public function updateStudent($request) {
         try {
             DB::transaction(function () use ($request) {
-                User::where('id', $request['student_id'])->update([
+                $updated = User::where('id', $request['student_id'])->lockForUpdate()->firstOrFail()->update([
                     'first_name'    => $request['first_name'],
                     'last_name'     => $request['last_name'],
                     'email'         => $request['email'],
@@ -136,6 +137,10 @@ class UserRepository implements UserInterface {
                     'religion'      => $request['religion'],
                     'blood_type'    => $request['blood_type'],
                 ]);
+
+                if (!$updated) {
+                    throw new \RuntimeException('Student update was cancelled.');
+                }
 
                 // Update Parents' information
                 $studentParentInfoRepository = new StudentParentInfoRepository();
@@ -153,7 +158,7 @@ class UserRepository implements UserInterface {
     public function updateTeacher($request) {
         try {
             DB::transaction(function () use ($request) {
-                User::where('id', $request['teacher_id'])->update([
+                $updated = User::where('id', $request['teacher_id'])->lockForUpdate()->firstOrFail()->update([
                     'first_name'    => $request['first_name'],
                     'last_name'     => $request['last_name'],
                     'email'         => $request['email'],
@@ -165,6 +170,9 @@ class UserRepository implements UserInterface {
                     'city'          => $request['city'],
                     'zip'           => $request['zip'],
                 ]);
+                if (!$updated) {
+                    throw new \RuntimeException('Teacher update was cancelled.');
+                }
             });
         } catch (\Exception $e) {
             throw new \Exception('Failed to update Teacher. '.$e->getMessage());
@@ -229,9 +237,17 @@ class UserRepository implements UserInterface {
 
     public function changePassword($new_password) {
         try {
-            return User::where('id', auth()->user()->id)->update([
-                'password'  => Hash::make($new_password)
-            ]);
+            return DB::transaction(function () use ($new_password) {
+                $user = User::where('id', auth()->user()->id)->lockForUpdate()->firstOrFail();
+                $user->password = Hash::make($new_password);
+                if (!$user->save()) {
+                    throw new \RuntimeException('Password update was cancelled.');
+                }
+
+                app(AuditLogger::class)->record('auth.password_changed', $user);
+
+                return true;
+            });
         } catch (\Exception $e) {
             throw new \Exception('Failed to change password. '.$e->getMessage());
         }

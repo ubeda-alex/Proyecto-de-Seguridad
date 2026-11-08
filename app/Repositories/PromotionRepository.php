@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use App\Models\User;
 use App\Models\Promotion;
+use Illuminate\Support\Facades\DB;
 
 class PromotionRepository {
     public function assignClassSection($request, $student_id) {
@@ -22,9 +23,13 @@ class PromotionRepository {
 
     public function update($request, $student_id) {
         try{
-            Promotion::where('student_id', $student_id)->update([
-                'id_card_number'=> $request['id_card_number'],
-            ]);
+            DB::transaction(function () use ($request, $student_id) {
+                foreach (Promotion::where('student_id', $student_id)->lockForUpdate()->get() as $promotion) {
+                    if (!$promotion->update(['id_card_number' => $request['id_card_number']])) {
+                        throw new \RuntimeException('Promotion update was cancelled.');
+                    }
+                }
+            });
         } catch (\Exception $e) {
             throw new \Exception('Failed to update Student. '.$e->getMessage());
         }
