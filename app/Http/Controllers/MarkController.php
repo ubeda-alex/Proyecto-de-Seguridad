@@ -10,6 +10,10 @@ use App\Models\AssignedTeacher;
 use App\Models\Exam;
 use App\Models\Section;
 use App\Http\Requests\StoreMarksRequest;
+use App\Http\Requests\StoreFinalMarksRequest;
+use App\Models\FinalMark;
+use App\Services\MarkValidation;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use App\Traits\SchoolSession;
 use App\Interfaces\UserInterface;
@@ -179,6 +183,10 @@ class MarkController extends Controller
      */
     public function showFinalMark(Request $request)
     {
+        if (!$request->has('session_id')) {
+            $request->merge(['session_id' => $this->getSchoolCurrentSession()]);
+        }
+        $this->authorizeFinalMarkContext($request);
         $class_id = $request->query('class_id');
         $section_id = $request->query('section_id');
         $course_id = $request->query('course_id');
@@ -213,78 +221,95 @@ class MarkController extends Controller
      */
     public function store(StoreMarksRequest $request)
     {
-        $input = $request->validated();
-        $current_school_session_id = $this->getSchoolCurrentSession();
-        abort_unless((int) $input['session_id'] === (int) $current_school_session_id, 403);
-        abort_unless(AssignedTeacher::where([
-            'teacher_id' => $request->user()->id,
-            'session_id' => $input['session_id'],
-            'semester_id' => $input['semester_id'],
-            'class_id' => $input['class_id'],
-            'section_id' => $input['section_id'],
-            'course_id' => $input['course_id'],
-        ])->exists(), 404);
-        abort_unless(Course::where('id', $input['course_id'])->where([
-            'session_id' => $input['session_id'],
-            'semester_id' => $input['semester_id'],
-            'class_id' => $input['class_id'],
-        ])->exists(), 403);
-        abort_unless(Section::where('id', $input['section_id'])->where([
-            'session_id' => $input['session_id'],
-            'class_id' => $input['class_id'],
-        ])->exists(), 403);
+        return DB::transaction(function () use ($request) {
+            $input = $request->validated();
+            $current_school_session_id = $this->getSchoolCurrentSession();
+            abort_unless((int) $input['session_id'] === (int) $current_school_session_id, 403);
+            abort_unless(AssignedTeacher::where([
+                'teacher_id' => $request->user()->id,
+                'session_id' => $input['session_id'],
+                'semester_id' => $input['semester_id'],
+                'class_id' => $input['class_id'],
+                'section_id' => $input['section_id'],
+                'course_id' => $input['course_id'],
+            ])->exists(), 404);
+            abort_unless(Course::where('id', $input['course_id'])->where([
+                'session_id' => $input['session_id'],
+                'semester_id' => $input['semester_id'],
+                'class_id' => $input['class_id'],
+            ])->exists(), 403);
+            abort_unless(Section::where('id', $input['section_id'])->where([
+                'session_id' => $input['session_id'],
+                'class_id' => $input['class_id'],
+            ])->exists(), 403);
 
-        // Validate the entire batch before writing any row.
-        $studentIds = array_keys($input['student_mark']);
-        $examIds = [];
-        foreach ($input['student_mark'] as $studentId => $marks) {
-            abort_unless(ctype_digit((string) $studentId) && (int) $studentId > 0, 422);
-            foreach (array_keys($marks) as $examId) {
-                abort_unless(ctype_digit((string) $examId) && (int) $examId > 0, 422);
-                $examIds[] = $examId;
+            // Validate the entire batch before writing any row.
+            $studentIds = array_keys($input['student_mark']);
+            $examIds = [];
+            foreach ($input['student_mark'] as $studentId => $marks) {
+                abort_unless(ctype_digit((string) $studentId) && (int) $studentId > 0, 422);
+                foreach (array_keys($marks) as $examId) {
+                    abort_unless(ctype_digit((string) $examId) && (int) $examId > 0, 422);
+                    $examIds[] = $examId;
+                }
             }
-        }
-        $enrolledIds = Promotion::where([
-            'session_id' => $input['session_id'],
-            'class_id' => $input['class_id'],
-            'section_id' => $input['section_id'],
-        ])->whereIn('student_id', $studentIds)
-            ->whereHas('student', function ($query) {
-                $query->where('role', 'student');
-            })->pluck('student_id')->all();
-        abort_unless(count(array_diff($studentIds, $enrolledIds)) === 0, 403);
-        $examIds = array_unique($examIds);
-        $validExamCount = Exam::whereIn('id', $examIds)->where([
-            'session_id' => $input['session_id'],
-            'semester_id' => $input['semester_id'],
-            'class_id' => $input['class_id'],
-            'course_id' => $input['course_id'],
-        ])->count();
-        abort_unless($validExamCount === count($examIds), 403);
+            $enrolledIds = Promotion::where([
+                'session_id' => $input['session_id'],
+                'class_id' => $input['class_id'],
+                'section_id' => $input['section_id'],
+            ])->whereIn('student_id', $studentIds)
+                ->whereHas('student', function ($query) {
+                    $query->where('role', 'student');
+                })->lockForUpdate()->get()->pluck('student_id')->all();
+            abort_unless(count(array_diff($studentIds, $enrolledIds)) === 0, 403);
+            $examIds = array_unique($examIds);
+            $validExamCount = Exam::whereIn('id', $examIds)->where([
+                'session_id' => $input['session_id'],
+                'semester_id' => $input['semester_id'],
+                'class_id' => $input['class_id'],
+                'course_id' => $input['course_id'],
+            ])->count();
+            abort_unless($validExamCount === count($examIds), 403);
 
-        $rows = [];
-        foreach($input['student_mark'] as $id => $stm) {
-            foreach($stm as $exam => $mark){
-                $row = [];
-                $row['class_id'] = $request->class_id;
-                $row['student_id'] = $id;
-                $row['marks'] = $mark;
-                $row['section_id'] = $request->section_id;
-                $row['course_id'] = $request->course_id;
-                $row['session_id'] = $request->session_id;
-                $row['exam_id'] = $exam;
-
-                $rows[] = $row;
+            $validation = new MarkValidation();
+            $limits = $validation->examLimits($examIds, $input['session_id']);
+            foreach ($input['student_mark'] as $studentId => $marks) {
+                foreach ($marks as $examId => $value) {
+                    $validation->examMark($value, $limits[$examId], "student_mark.$studentId.$examId");
+                }
             }
-        }
-        try {
-            $markRepository = new MarkRepository();
-            $markRepository->create($rows);
+            if (FinalMark::whereIn('student_id', $studentIds)->where([
+                'session_id' => $input['session_id'], 'semester_id' => $input['semester_id'],
+                'class_id' => $input['class_id'], 'section_id' => $input['section_id'],
+                'course_id' => $input['course_id'],
+            ])->lockForUpdate()->get()->isNotEmpty()) {
+                $validation->reject('student_mark', 'Marks cannot be changed after final submission.');
+            }
 
-            return back()->with('status', 'Saving marks was successful!');
-        } catch (\Exception $e) {
-            return back()->withError($e->getMessage());
-        }
+            $rows = [];
+            foreach($input['student_mark'] as $id => $stm) {
+                foreach($stm as $exam => $mark){
+                    $row = [];
+                    $row['class_id'] = $request->class_id;
+                    $row['student_id'] = $id;
+                    $row['marks'] = $mark;
+                    $row['section_id'] = $request->section_id;
+                    $row['course_id'] = $request->course_id;
+                    $row['session_id'] = $request->session_id;
+                    $row['exam_id'] = $exam;
+
+                    $rows[] = $row;
+                }
+            }
+            try {
+                $markRepository = new MarkRepository();
+                $markRepository->create($rows);
+
+                return back()->with('status', 'Saving marks was successful!');
+            } catch (\Exception $e) {
+                return back()->withError($e->getMessage());
+            }
+        });
     }
 
     /**
@@ -293,33 +318,85 @@ class MarkController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
-    public function storeFinalMark(Request $request) {
-        $current_school_session_id = $this->getSchoolCurrentSession();
+    public function storeFinalMark(StoreFinalMarksRequest $request) {
+        $context = $this->authorizeFinalMarkContext($request);
+        $input = $request->validated();
+        $validation = new MarkValidation();
+        DB::transaction(function () use ($context, $input, $validation) {
+            $studentIds = array_keys($input['final_mark']);
+            foreach ($studentIds as $id) {
+                abort_unless(ctype_digit((string) $id) && (int) $id > 0, 422);
+            }
+            $enrolledIds = Promotion::where([
+                'session_id' => $context['session_id'], 'class_id' => $context['class_id'],
+                'section_id' => $context['section_id'],
+            ])->whereIn('student_id', $studentIds)->whereHas('student', function ($query) {
+                $query->where('role', 'student');
+            })->lockForUpdate()->get()->pluck('student_id')->all();
+            abort_unless(count(array_diff($studentIds, $enrolledIds)) === 0, 403);
+            if (FinalMark::where($context)->whereIn('student_id', $studentIds)->lockForUpdate()->get()->isNotEmpty()) {
+                $validation->reject('final_mark', 'Final marks have already been submitted.');
+            }
+            $examIds = Exam::where([
+                'session_id' => $context['session_id'], 'semester_id' => $context['semester_id'],
+                'class_id' => $context['class_id'], 'course_id' => $context['course_id'],
+            ])->pluck('id')->all();
+            if (!$examIds) {
+                $validation->reject('final_mark', 'No exams are configured for this course.');
+            }
+            $limits = $validation->examLimits($examIds, $context['session_id']);
+            $ranges = $validation->finalRanges($context);
+            $markContext = $context;
+            unset($markContext['semester_id']);
+            $savedMarks = Mark::where($markContext)->whereIn('student_id', $studentIds)->lockForUpdate()->get()->groupBy('student_id');
+            $rows = [];
+            foreach ($input['final_mark'] as $id => $finalMark) {
+                $marks = $savedMarks->get($id, collect());
+                if ($marks->count() !== count($examIds) || $marks->pluck('exam_id')->unique()->count() !== count($examIds)
+                    || array_diff($examIds, $marks->pluck('exam_id')->all())) {
+                    $validation->reject("final_mark.$id", 'Complete, unique marks for every course exam are required.');
+                }
+                $calculated = 0;
+                foreach ($marks as $mark) {
+                    $validation->examMark($mark->marks, $limits[$mark->exam_id], "final_mark.$id");
+                    $calculated += (float) $mark->marks;
+                }
+                // Preserve the existing sum; never trust calculated_mark from the browser.
+                $calculated = round($calculated, 2);
+                $validation->finalMark($calculated, $ranges, "final_mark.$id");
+                $validation->finalMark($finalMark, $ranges, "final_mark.$id");
+                $note = trim($input['note'][$id] ?? '');
+                if (abs((float) $finalMark - $calculated) > 0.000001 && $note === '') {
+                    $validation->reject("note.$id", 'Explain the manual adjustment to the calculated mark.');
+                }
+                $rows[] = $context + ['student_id' => $id, 'calculated_marks' => $calculated,
+                    'final_marks' => $finalMark, 'note' => $note];
+            }
+            (new MarkRepository())->storeFinalMarks($rows);
+        });
+        return back()->with('status', 'Submitting final marks was successful!');
+    }
 
-        $this->checkIfLoggedInUserIsAssignedTeacher($request, $current_school_session_id);
-        $rows = [];
-        foreach($request->calculated_mark as $id => $cmark) {
-                $row = [];
-                $row['class_id'] = $request->class_id;
-                $row['student_id'] = $id;
-                $row['calculated_marks'] = $cmark;
-                $row['final_marks'] = $request->final_mark[$id];
-                $row['note'] = $request->note[$id];
-                $row['section_id'] = $request->section_id;
-                $row['course_id'] = $request->course_id;
-                $row['session_id'] = $request->session_id;
-                $row['semester_id'] = $request->semester_id;
-
-                $rows[] = $row;
-        }
-        try {
-            $markRepository = new MarkRepository();
-            $markRepository->storeFinalMarks($rows);
-
-            return back()->with('status', 'Submitting final marks was successful!');
-        } catch (\Exception $e) {
-            return back()->withError($e->getMessage());
-        }
+    private function authorizeFinalMarkContext(Request $request): array
+    {
+        abort_unless($request->user()->can('save marks'), 403);
+        $context = $request->validate([
+            'session_id' => 'required|integer|min:1', 'semester_id' => 'required|integer|min:1',
+            'class_id' => 'required|integer|min:1', 'section_id' => 'required|integer|min:1',
+            'course_id' => 'required|integer|min:1',
+        ]);
+        abort_unless((int) $context['session_id'] === (int) $this->getSchoolCurrentSession(), 403);
+        abort_unless(AssignedTeacher::where($context)->where('teacher_id', $request->user()->id)->exists(), 403);
+        abort_unless(Course::where('id', $context['course_id'])->where([
+            'session_id' => $context['session_id'], 'semester_id' => $context['semester_id'],
+            'class_id' => $context['class_id'],
+        ])->exists(), 403);
+        abort_unless(Section::where('id', $context['section_id'])->where([
+            'session_id' => $context['session_id'], 'class_id' => $context['class_id'],
+        ])->exists(), 403);
+        $settings = $this->academicSettingRepository->getAcademicSetting();
+        abort_unless($settings && $settings->marks_submission_status === 'on', 403);
+        return $context;
     }
 
     /**
