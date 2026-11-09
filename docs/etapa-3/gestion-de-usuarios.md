@@ -13,7 +13,7 @@
 
 | Campo | Valor |
 |---|---|
-| Responsable | Alexander Ubeda *(completar carné)* |
+| Responsable | Alexander Ubeda · carné 2023086480 |
 | Módulo | Gestión de Usuarios |
 | Repositorio | [ubeda-alex/Proyecto-de-Seguridad](https://github.com/ubeda-alex/Proyecto-de-Seguridad) |
 | Rama | `fix-modulo-gestion-usuarios` (base: `main` @ `4f97746`) |

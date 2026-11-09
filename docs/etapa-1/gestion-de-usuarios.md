@@ -1,7 +1,7 @@
 # Etapa 1: Diagnóstico y gobernanza de Gestión de Usuarios
 
 **Proyecto:** Unifiedtransform · **Curso:** IC-8071 Seguridad del Software  
-**Responsable del módulo:** Alex; completar nombre y carné en la portada grupal.  
+**Responsable del módulo:** Alexander Ubeda · carné 2023086480.  
 **Fecha de revisión:** 5 de octubre de 2026.  
 **Versión analizada:** commit `634a114e95b1d713dce8ac6593a9f56c5d806cda`.
 
