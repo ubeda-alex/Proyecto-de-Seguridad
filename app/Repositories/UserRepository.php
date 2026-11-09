@@ -121,7 +121,11 @@ class UserRepository implements UserInterface {
     public function updateStudent($request) {
         try {
             DB::transaction(function () use ($request) {
-                User::where('id', $request['student_id'])->update([
+                $student = User::where('id', $request['student_id'])
+                    ->where('role', 'student')
+                    ->firstOrFail();
+
+                $student->update([
                     'first_name'    => $request['first_name'],
                     'last_name'     => $request['last_name'],
                     'email'         => $request['email'],
@@ -139,11 +143,11 @@ class UserRepository implements UserInterface {
 
                 // Update Parents' information
                 $studentParentInfoRepository = new StudentParentInfoRepository();
-                $studentParentInfoRepository->update($request, $request['student_id']);
+                $studentParentInfoRepository->update($request, $student->id);
 
                 // Update Student's ID card number
                 $promotionRepository = new PromotionRepository();
-                $promotionRepository->update($request, $request['student_id']);
+                $promotionRepository->update($request, $student->id);
             });
         } catch (\Exception $e) {
             throw new \Exception('Failed to update Student. '.$e->getMessage());
@@ -153,7 +157,11 @@ class UserRepository implements UserInterface {
     public function updateTeacher($request) {
         try {
             DB::transaction(function () use ($request) {
-                User::where('id', $request['teacher_id'])->update([
+                $teacher = User::where('id', $request['teacher_id'])
+                    ->where('role', 'teacher')
+                    ->firstOrFail();
+
+                $teacher->update([
                     'first_name'    => $request['first_name'],
                     'last_name'     => $request['last_name'],
                     'email'         => $request['email'],

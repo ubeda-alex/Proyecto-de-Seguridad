@@ -27,6 +27,8 @@ class UserController extends Controller
     SectionInterface $schoolSectionRepository)
     {
         $this->middleware(['can:view users']);
+        $this->middleware('can:edit users')->only(['updateStudent', 'updateTeacher']);
+        $this->middleware('can:create users')->only(['storeStudent', 'storeTeacher']);
 
         $this->userRepository = $userRepository;
         $this->schoolSessionRepository = $schoolSessionRepository;
