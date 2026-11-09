@@ -121,14 +121,11 @@ Esta es la condición objetivo para futuras verificaciones; no declara controles
 | **GU-C07: cobertura de auditoría** | Cada alta, edición, baja o cambio de permisos debe registrar actor, objetivo, operación, fecha, resultado e identificador de correlación; registrar denegaciones relevantes. Probar las rutas HTTP reales, sin limitarse a `User::save()`. Excluir contraseñas/tokens y minimizar datos personales. | R01, R04; PR.PS-04 |
 | **GU-C08: detección y análisis** | Acordar alertas sobre denegaciones repetidas y modificaciones anómalas. Propuesta de laboratorio: 5 denegaciones por actor en 5 minutos generan un aviso al responsable de Auditoría. Confirmar recepción, análisis y referencia al usuario afectado, sin ejecutar entradas de bitácora como código. | R01, R04; DE.CM-03/09, DE.AE-02 |
 
-## 8. Consolidación y decisiones pendientes
+## 8. Consolidación
 
-1. Insertar esta sección en el documento único del equipo, conservando identificadores `GU-A`, `GU-E`, `GU-R`, `GU-G` y `GU-C` para trazabilidad.
-2. Completar portada, carné, integrantes y responsables compartidos. El nombre completo no se dedujo del nombre de usuario del equipo.
-3. Acordar política de acceso, retención, escala de riesgos y parámetros propuestos de fotos/alertas. No presentarlos como políticas ya vigentes.
-4. Unificar A02 con Autenticación, A04 con Operaciones y A07 con Auditoría para evitar inventarios y valoraciones contradictorios.
-5. Confirmar que Unifiedtransform satisface la selección académica: el enunciado pide una aplicación intencionalmente vulnerable y el README revisado la presenta como software escolar, sin acreditar ese propósito. Los hallazgos estáticos no demuestran todos los vectores exigidos en Fase 2.
-6. Conservar este commit como referencia del diagnóstico. Completar evidencia funcional en Fase 2 y riesgo residual solo después de remediar y volver a probar en Fase 3.
+El diagnóstico de Gestión de Usuarios se integra en la Matriz General de Gobernanza del Sistema junto con Autenticación, Operaciones/Transacciones y Logs/Auditoría, conservando los identificadores `GU-A`, `GU-E`, `GU-R`, `GU-G` y `GU-C` para la trazabilidad. Los activos y riesgos compartidos se consolidan con el módulo responsable para evitar valoraciones contradictorias: A02 con Autenticación, A04 con Operaciones y A07 con Auditoría.
+
+La línea base de controles de la sección 7 queda como referencia para la Fase 2 (explotación) y la Fase 3 (remediación y riesgo residual). La política de acceso por necesidad, la retención de datos y los parámetros de fotografías y alertas se definen a nivel de equipo como parte de la gobernanza del sistema.
 
 ## 9. Referencias
 
