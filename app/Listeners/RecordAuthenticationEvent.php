@@ -17,10 +17,10 @@ class RecordAuthenticationEvent
         } elseif ($event instanceof Logout) {
             app(AuditLogger::class)->record('auth.logout', null, [], [], $event->user);
         } elseif ($event instanceof Failed) {
-            $email = $event->credentials['email'] ?? null;
+            $identifier = $event->credentials['email'] ?? $event->credentials['username'] ?? null;
 
             app(AuditLogger::class)->record('auth.login_failed', null, [], [
-                'attempted_email' => is_string($email) ? Str::limit($email, 255, '') : null,
+                'attempted_email' => is_string($identifier) ? Str::limit(str_replace(["\r", "\n"], ' ', $identifier), 255, '') : null,
                 'account_exists' => $event->user !== null,
             ]);
         }
