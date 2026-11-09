@@ -7,6 +7,7 @@ use App\Providers\RouteServiceProvider;
 use Illuminate\Foundation\Auth\AuthenticatesUsers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class LoginController extends Controller
 {
@@ -47,5 +48,12 @@ class LoginController extends Controller
     protected function throttleKey(Request $request)
     {
         return Str::lower($request->input($this->username()));
+    }
+
+    protected function sendFailedLoginResponse(Request $request)
+    {
+        throw ValidationException::withMessages([
+            $this->username() => [trans('auth.failed')],
+        ]);
     }
 }

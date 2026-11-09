@@ -80,4 +80,48 @@ class AuditLogTest extends TestCase
             'user_id' => null,
         ]);
     }
+
+    public function test_authentication_failures_are_logged_without_injection_and_with_integrity_hash()
+    {
+        $this->post('/login', [
+            'email' => "attacker\r\n<script>alert(1)</script>@example.com",
+            'password' => 'wrong-password',
+        ]);
+
+        $auditLog = AuditLog::where('event', 'auth.login_failed')
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertArrayHasKey('__signature', $auditLog->new_values);
+        $this->assertStringNotContainsString("\r", $auditLog->new_values['attempted_email'] ?? '');
+        $this->assertStringNotContainsString("<script>", $auditLog->new_values['attempted_email'] ?? '');
+    }
+
+    public function test_authentication_failures_and_password_reset_use_generic_messages()
+    {
+        $user = User::factory()->create();
+
+        $response = $this->from('/login')->post('/login', [
+            'email' => $user->email,
+            'password' => 'wrong-password',
+        ]);
+
+        $response->assertSessionHasErrors(['email']);
+        $this->assertSame(__('auth.failed'), $response->getSession()->get('errors')->first('email'));
+
+        $existingAccountResponse = $this->from('/password/reset')->post('/password/email', [
+            'email' => $user->email,
+        ]);
+
+        $existingAccountResponse->assertSessionHasNoErrors();
+        $existingAccountStatus = $existingAccountResponse->getSession()->get('status');
+
+        $unknownAccountResponse = $this->from('/password/reset')->post('/password/email', [
+            'email' => 'unknown@example.com',
+        ]);
+
+        $unknownAccountResponse->assertSessionHasNoErrors();
+        $this->assertSame(__('passwords.sent'), $existingAccountStatus);
+        $this->assertSame($existingAccountStatus, $unknownAccountResponse->getSession()->get('status'));
+    }
 }
