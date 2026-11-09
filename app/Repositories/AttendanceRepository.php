@@ -5,12 +5,20 @@ namespace App\Repositories;
 use Carbon\Carbon;
 use App\Models\Attendance;
 use App\Interfaces\AttendanceInterface;
+use Illuminate\Support\Facades\DB;
 
 class AttendanceRepository implements AttendanceInterface {
     public function saveAttendance($request) {
         try {
             $input = $this->prepareInput($request);
-            Attendance::insert($input);
+            DB::transaction(function () use ($input) {
+                foreach ($input as $row) {
+                    // Only fields constructed by prepareInput, including batch timestamps.
+                    $attendance = new Attendance();
+                    $attendance->forceFill($row);
+                    $attendance->save();
+                }
+            });
         } catch (\Exception $e) {
             throw new \Exception('Failed to save attendance. '.$e->getMessage());
         }
