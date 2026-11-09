@@ -11,6 +11,8 @@ use App\Interfaces\SchoolClassInterface;
 use App\Repositories\PromotionRepository;
 use App\Http\Requests\StudentStoreRequest;
 use App\Http\Requests\TeacherStoreRequest;
+use App\Http\Requests\StudentUpdateRequest;
+use App\Http\Requests\TeacherUpdateRequest;
 use App\Interfaces\SchoolSessionInterface;
 use App\Repositories\StudentParentInfoRepository;
 
@@ -147,9 +149,9 @@ class UserController extends Controller
         return view('students.edit', $data);
     }
 
-    public function updateStudent(Request $request) {
+    public function updateStudent(StudentUpdateRequest $request) {
         try {
-            $this->userRepository->updateStudent($request->toArray());
+            $this->userRepository->updateStudent($request->validated());
 
             return back()->with('status', 'Student update was successful!');
         } catch (\Exception $e) {
@@ -166,9 +168,9 @@ class UserController extends Controller
 
         return view('teachers.edit', $data);
     }
-    public function updateTeacher(Request $request) {
+    public function updateTeacher(TeacherUpdateRequest $request) {
         try {
-            $this->userRepository->updateTeacher($request->toArray());
+            $this->userRepository->updateTeacher($request->validated());
 
             return back()->with('status', 'Teacher update was successful!');
         } catch (\Exception $e) {
