@@ -6,20 +6,23 @@ use App\Models\Exam;
 use App\Models\Mark;
 use App\Models\FinalMark;
 use App\Interfaces\MarkInterface;
+use Illuminate\Support\Facades\DB;
 
 class MarkRepository implements MarkInterface {
     public function create($rows) {
         try {
-            foreach($rows as $row){
-                Mark::updateOrCreate([
-                    'exam_id' => $row['exam_id'],
-                    'student_id' => $row['student_id'],
-                    'session_id' => $row['session_id'],
-                    'class_id' => $row['class_id'],
-                    'section_id' => $row['section_id'],
-                    'course_id' => $row['course_id']
-                ],['marks' => $row['marks']]);
-            }
+            DB::transaction(function () use ($rows) {
+                foreach($rows as $row){
+                    Mark::updateOrCreate([
+                        'exam_id' => $row['exam_id'],
+                        'student_id' => $row['student_id'],
+                        'session_id' => $row['session_id'],
+                        'class_id' => $row['class_id'],
+                        'section_id' => $row['section_id'],
+                        'course_id' => $row['course_id']
+                    ],['marks' => $row['marks']]);
+                }
+            });
         } catch (\Exception $e) {
             throw new \Exception('Failed to update students marks. '.$e->getMessage());
         }

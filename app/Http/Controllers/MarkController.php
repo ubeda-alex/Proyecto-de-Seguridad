@@ -7,6 +7,9 @@ use App\Models\Mark;
 use App\Models\Course;
 use App\Models\Promotion;
 use App\Models\AssignedTeacher;
+use App\Models\Exam;
+use App\Models\Section;
+use App\Http\Requests\StoreMarksRequest;
 use Illuminate\Http\Request;
 use App\Traits\SchoolSession;
 use App\Interfaces\UserInterface;
@@ -208,12 +211,59 @@ class MarkController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
-    public function store(Request $request)
+    public function store(StoreMarksRequest $request)
     {
+        $input = $request->validated();
         $current_school_session_id = $this->getSchoolCurrentSession();
-        $this->checkIfLoggedInUserIsAssignedTeacher($request, $current_school_session_id);
+        abort_unless((int) $input['session_id'] === (int) $current_school_session_id, 403);
+        abort_unless(AssignedTeacher::where([
+            'teacher_id' => $request->user()->id,
+            'session_id' => $input['session_id'],
+            'semester_id' => $input['semester_id'],
+            'class_id' => $input['class_id'],
+            'section_id' => $input['section_id'],
+            'course_id' => $input['course_id'],
+        ])->exists(), 404);
+        abort_unless(Course::where('id', $input['course_id'])->where([
+            'session_id' => $input['session_id'],
+            'semester_id' => $input['semester_id'],
+            'class_id' => $input['class_id'],
+        ])->exists(), 403);
+        abort_unless(Section::where('id', $input['section_id'])->where([
+            'session_id' => $input['session_id'],
+            'class_id' => $input['class_id'],
+        ])->exists(), 403);
+
+        // Validate the entire batch before writing any row.
+        $studentIds = array_keys($input['student_mark']);
+        $examIds = [];
+        foreach ($input['student_mark'] as $studentId => $marks) {
+            abort_unless(ctype_digit((string) $studentId) && (int) $studentId > 0, 422);
+            foreach (array_keys($marks) as $examId) {
+                abort_unless(ctype_digit((string) $examId) && (int) $examId > 0, 422);
+                $examIds[] = $examId;
+            }
+        }
+        $enrolledIds = Promotion::where([
+            'session_id' => $input['session_id'],
+            'class_id' => $input['class_id'],
+            'section_id' => $input['section_id'],
+        ])->whereIn('student_id', $studentIds)
+            ->whereHas('student', function ($query) {
+                $query->where('role', 'student');
+            })->pluck('student_id')->all();
+        abort_unless(count(array_diff($studentIds, $enrolledIds)) === 0, 403);
+        $examIds = array_unique($examIds);
+        $validExamCount = Exam::whereIn('id', $examIds)->where([
+            'session_id' => $input['session_id'],
+            'semester_id' => $input['semester_id'],
+            'class_id' => $input['class_id'],
+            'course_id' => $input['course_id'],
+        ])->count();
+        abort_unless($validExamCount === count($examIds), 403);
+
         $rows = [];
-        foreach($request->student_mark as $id => $stm) {
+        foreach($input['student_mark'] as $id => $stm) {
             foreach($stm as $exam => $mark){
                 $row = [];
                 $row['class_id'] = $request->class_id;
