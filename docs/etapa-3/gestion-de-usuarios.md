@@ -18,7 +18,7 @@
 | Repositorio | [ubeda-alex/Proyecto-de-Seguridad](https://github.com/ubeda-alex/Proyecto-de-Seguridad) |
 | Rama | `fix-modulo-gestion-usuarios` (base: `main` @ `4f97746`) |
 | Pull Request | [#8](https://github.com/ubeda-alex/Proyecto-de-Seguridad/pull/8) |
-| Commits | `9340000` autorización y validación de updates (UM-01, UM-03a) · `5845bc9` pruebas de regresión de autorización y auditoría (UM-01, UM-03) · `430333a` CSP aplicada con CDN permitidos · `612c5aa`, `b3643c3`, `3344510` documentación fases 1–3 y PoC · commit de actualización de este reporte |
+| Commits | `d234efc` autorización y validación de updates (UM-01, UM-03a) · `96432b2` pruebas de regresión de autorización y auditoría (UM-01, UM-03) · `ca82671` CSP aplicada con CDN permitidos · `ff533b9`, `63051ee`, `3691466` documentación fases 1–3 y PoC · commit de actualización de este reporte |
 
 **Relación con el PR #6 (Autenticación).** El PR [#6](https://github.com/ubeda-alex/Proyecto-de-Seguridad/pull/6), ya integrado en `main`, corrigió la misma causa raíz del IDOR (UM-01) desde el módulo de Autenticación: añadió el middleware `can:edit users` en `updateStudent`/`updateTeacher`, el filtro por rol con update por instancia en `UserRepository` y una primera versión de `SecurityHeaders` en modo *report-only*. Esta rama parte de ese `main` y **agrega** lo que faltaba para cerrar el módulo: validación estricta y lista blanca de campos (UM-03a), pruebas de regresión del módulo (UM-01/UM-03b) y una CSP **aplicada** compatible con los CDN que usan los componentes compartidos.
 
