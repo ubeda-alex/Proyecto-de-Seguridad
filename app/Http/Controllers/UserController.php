@@ -35,7 +35,7 @@ class UserController extends Controller
         $this->schoolClassRepository = $schoolClassRepository;
         $this->schoolSectionRepository = $schoolSectionRepository;
     }
-    
+
     /**
      * Store a newly created resource in storage.
      *

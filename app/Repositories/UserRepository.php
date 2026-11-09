@@ -191,7 +191,7 @@ class UserRepository implements UserInterface {
                 $class_id = $schoolClass->id;
                 $section_id = $section->id;
             }
-            
+
         }
         try {
             $promotionRepository = new PromotionRepository();
