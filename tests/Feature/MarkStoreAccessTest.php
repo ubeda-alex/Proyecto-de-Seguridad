@@ -34,6 +34,7 @@ class MarkStoreAccessTest extends TestCase
             DB::table('sections')->insert(['id' => $id, 'section_name' => 'Test '.$id, 'room_no' => 'Test', 'class_id' => 1, 'session_id' => 1]);
             DB::table('courses')->insert(['id' => $id, 'course_name' => 'Test '.$id, 'course_type' => 'Core', 'class_id' => 1, 'semester_id' => 1, 'session_id' => 1]);
             DB::table('exams')->insert(['id' => $id, 'exam_name' => 'Test '.$id, 'start_date' => '2026-11-01 08:00:00', 'end_date' => '2026-11-01 09:00:00', 'course_id' => $id, 'class_id' => 1, 'semester_id' => 1, 'session_id' => 1]);
+            DB::table('exam_rules')->insert(['exam_id' => $id, 'session_id' => 1, 'total_marks' => 100, 'pass_marks' => 70, 'marks_distribution_note' => 'Test scale']);
         }
         foreach ([[$this->student, 1], [$this->second, 1], [$this->other, 2]] as [$user, $section]) {
             DB::table('promotions')->insert(['student_id' => $user->id, 'class_id' => 1, 'section_id' => $section, 'session_id' => 1, 'id_card_number' => 'TEST-'.$user->id]);
